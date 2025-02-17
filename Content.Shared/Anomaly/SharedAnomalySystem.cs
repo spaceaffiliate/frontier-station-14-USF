@@ -34,6 +34,8 @@ public abstract class SharedAnomalySystem : EntitySystem
     [Dependency] protected readonly SharedPopupSystem Popup = default!;
     [Dependency] private readonly IPrototypeManager _prototype = default!;
     [Dependency] private readonly SharedTransformSystem _transform = default!;
+    [Dependency] private readonly SharedMapSystem _map = default!;
+    [Dependency] private readonly SharedAnomalyCoreSystem _anomalyCore = default!; // Frontier
 
     public override void Initialize()
     {
@@ -47,6 +49,8 @@ public abstract class SharedAnomalySystem : EntitySystem
     {
         if (!TryComp<CorePoweredThrowerComponent>(args.Used, out var corePowered) || !TryComp<PhysicsComponent>(ent, out var body))
             return;
+        if (HasComp<InnerBodyAnomalyComponent>(ent.Owner)) // Frontier
+            return; // Frontier
         _physics.SetBodyType(ent, BodyType.Dynamic, body: body);
         ChangeAnomalyStability(ent, Random.NextFloat(corePowered.StabilityPerThrow.X, corePowered.StabilityPerThrow.Y), ent.Comp);
     }
@@ -189,6 +193,13 @@ public abstract class SharedAnomalySystem : EntitySystem
         {
             var core = Spawn(supercritical ? component.CorePrototype : component.CoreInertPrototype, Transform(uid).Coordinates);
             _transform.PlaceNextTo(core, uid);
+
+            // Frontier: set value to points retrieved
+            if (TryComp<AnomalyCoreComponent>(core, out var coreComp))
+            {
+                _anomalyCore.SetValueFromPointsEarned(core, coreComp, component.PointsEarned);
+            }
+            // End Frontier
         }
 
         if (component.DeleteEntity)
@@ -358,8 +369,11 @@ public abstract class SharedAnomalySystem : EntitySystem
         var amount = (int) (MathHelper.Lerp(settings.MinAmount, settings.MaxAmount, severity * stability * powerModifier) + 0.5f);
 
         var localpos = xform.Coordinates.Position;
-        var tilerefs = grid.GetLocalTilesIntersecting(
-            new Box2(localpos + new Vector2(-settings.MaxRange, -settings.MaxRange), localpos + new Vector2(settings.MaxRange, settings.MaxRange))).ToList();
+        var tilerefs = _map.GetLocalTilesIntersecting(
+            xform.GridUid.Value,
+            grid,
+            new Box2(localpos + new Vector2(-settings.MaxRange, -settings.MaxRange), localpos + new Vector2(settings.MaxRange, settings.MaxRange)))
+            .ToList();
 
         if (tilerefs.Count == 0)
             return null;
